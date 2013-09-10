@@ -78,7 +78,7 @@ let connected_to_db () = !ref_db <> None
 (** Queries *)
 
 
-type release = { rel_version : string ; rel_date : Netdate.t }
+type release = { rel_version : string ; rel_date : float ; }
 type status = Devcode | Alpha | Beta | Stable | Mature
 
 let unopt_string = function None -> "" | Some s -> s;;
@@ -182,8 +182,8 @@ let get_contrib_license db idcontrib =
     | _ -> failwith "Bad result in get_contrib_license"
   in
   match SQL.map result f with
-    [] -> ""
-  | l :: _ -> l
+    [] -> None
+  | l :: _ -> Some l
 ;;
 
 let get_contrib_status db idcontrib =
@@ -223,12 +223,14 @@ type author =
 
 
 type contrib =
-  { c_name : string ;
+  {
+    c_label : string ;
+    c_name : string ;
     c_desc : string ;
     c_authors : author list ;
     c_home : Rdf_uri.uri ;
     c_releases : release list ;
-    c_license : string ;
+    c_license : string option;
     c_status : status option;
     c_tags : string list ;
     c_kinds : string list ;
@@ -330,8 +332,8 @@ let get_contrib_kinds db kinds id =
 let authors db =
   let f (id, name, firstname, url) =
     let label =
-      let s = name ^ "-" ^ firstname in
-      String.concat "-" (split_string s [' '])
+      let s = utf8 (name ^ " " ^ firstname) in
+      String.lowercase (String.concat "-" (split_string s [' ']))
     in
     { aut_name = utf8 name ; aut_firstname = utf8 firstname ;
       aut_id = id ; aut_home = map_opt (fun s -> Rdf_uri.uri (utf8 s)) url ;
@@ -342,8 +344,9 @@ let authors db =
 
 let contribs db authors topics kinds =
   let f (id, name, desc, url, version, date) =
-    let date = Netdate.create date in
-    { c_name = utf8 name ;
+    {
+      c_label = utf8 (String.lowercase name) ;
+      c_name = utf8 name ;
       c_desc = utf8 desc ;
       c_authors = List.map (fun id -> IMap.find id authors) (get_contrib_authors db id) ;
       c_home = Rdf_uri.uri (utf8 (strip_string url)) ;
@@ -358,9 +361,144 @@ let contribs db authors topics kinds =
   List.map f (get_contribs db)
 ;;
 
+(** File generation *)
+
+let base_uri = Rdf_uri.uri "http://ocaml.org/hump";;
+let authors_uri = Rdf_uri.concat base_uri "authors/";;
+let author_uri_ label = Rdf_uri.append authors_uri (Netencoding.Url.encode label);;
+
+let contribs_uri = Rdf_uri.concat base_uri "contribs/";;
+let contrib_uri_ label = Rdf_uri.append contribs_uri (Netencoding.Url.encode label);;
+
+let hump_uri = Rdf_uri.uri "http://ocaml.org/hump.rdf#";;
+let hump_ s = Rdf_uri.append hump_uri s;;
+let hump_release = hump_"release";;
+let hump_status = hump_"status";;
+let hump_tag = hump_"tag";;
+let hump_kind = hump_"kind";;
+
+let status_uri s =
+  let s =
+    match s with
+      Devcode -> "devcode"
+    | Alpha -> "alpha"
+    | Beta -> "beta"
+    | Stable -> "stable"
+    | Mature -> "mature"
+  in
+  hump_ s
+;;
+
+let dc_uri = Rdf_uri.uri "http://purl.org/dc/elements/1.1/";;
+let dc_ = Rdf_uri.append dc_uri;;
+let dc_desc = dc_"description";;
+let dc_date = dc_"date";;
+let dc_creator = dc_"creator";;
+let dc_rights = dc_"rights";;
+
+let foaf_uri = Rdf_uri.uri "http://xmlns.com/foaf/0.1/";;
+let foaf_ = Rdf_uri.append foaf_uri ;;
+let foaf_name = foaf_"name";;
+let foaf_firstname = foaf_"firstName";;
+let foaf_lastname = foaf_"lastName";;
+let foaf_homepage = foaf_"homepage";;
+
+let lit s = Rdf_term.term_of_literal_string s;;
+
+let gen_ttl g file =
+  let tmp = Filename.temp_file "importhump" ".ttl" in
+  g.Rdf_graph.set_namespaces [
+    dc_uri, "dc" ;
+    foaf_uri, "foaf" ; hump_uri, "hump" ;
+    authors_uri, "authors" ; contribs_uri, "contribs" ;
+  ];
+  Rdf_ttl.to_file g tmp;
+  let com = "grep -v '@prefix' "^(Filename.quote tmp)^" > "^(Filename.quote file) in
+  match Sys.command com with
+    0 -> ()
+  | n ->  failwith ("Command failed: "^com)
+;;
+
+let author_file outdir a =
+  Filename.concat outdir (Filename.concat "authors" (a.aut_label^".ttl"));;
+
+let contrib_file outdir c =
+  Filename.concat outdir (Filename.concat "contribs" ((String.lowercase c.c_name)^".ttl"));;
+
+let gen_author outdir _ a =
+  let g = Rdf_graph.open_graph base_uri in
+  let sub = Rdf_term.Uri (author_uri_ a.aut_label) in
+  g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit (a.aut_firstname^" "^a.aut_name)) ;
+  g.Rdf_graph.add_triple ~sub ~pred: foaf_lastname ~obj: (lit a.aut_name) ;
+  g.Rdf_graph.add_triple ~sub ~pred: foaf_firstname ~obj: (lit a.aut_firstname) ;
+  (
+   match a.aut_home with
+     None -> ()
+   | Some s -> g.Rdf_graph.add_triple ~sub ~pred: foaf_homepage ~obj: (Rdf_term.Uri s)
+  ) ;
+  let file = author_file outdir a in
+  gen_ttl g file
+;;
+
+let gen_authors outdir authors = IMap.iter (gen_author outdir) authors;;
+
+let gen_contrib outdir c =
+  let bn =
+    let cpt = ref 0 in
+    fun () -> incr cpt; Rdf_term.Blank_ (Rdf_term.blank_id_of_string ("b"^(string_of_int !cpt)))
+  in
+  try
+    let g = Rdf_graph.open_graph base_uri in
+    let sub = Rdf_term.Uri (contrib_uri_ c.c_label) in
+    g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit c.c_name);
+    g.Rdf_graph.add_triple ~sub ~pred: foaf_homepage ~obj: (Rdf_term.Uri c.c_home);
+    g.Rdf_graph.add_triple ~sub ~pred: dc_desc ~obj: (lit c.c_desc);
+
+    let f_aut author =
+      let obj = Rdf_term.Uri (author_uri_ author.aut_label) in
+      g.Rdf_graph.add_triple ~sub ~pred: dc_creator ~obj
+    in
+    List.iter f_aut c.c_authors;
+
+    let f_rel rel =
+      let b = bn () in
+      g.Rdf_graph.add_triple ~sub ~pred: hump_release ~obj: b;
+      g.Rdf_graph.add_triple ~sub: b ~pred: foaf_name ~obj: (lit rel.rel_version);
+      g.Rdf_graph.add_triple ~sub: b ~pred: dc_date
+        ~obj: (Rdf_term.term_of_datetime ~d: rel.rel_date ());
+    in
+    List.iter f_rel c.c_releases;
+
+    (match c.c_license with
+      None -> ()
+    | Some s -> g.Rdf_graph.add_triple ~sub ~pred: dc_rights ~obj: (lit s);
+    );
+
+    (match c.c_status with
+      None -> ()
+    | Some s -> g.Rdf_graph.add_triple ~sub
+         ~pred: hump_status ~obj: (Rdf_term.Uri (status_uri s))
+    );
+    let f_tag tag =
+      g.Rdf_graph.add_triple ~sub ~pred: hump_tag ~obj: (lit tag)
+    in
+    List.iter f_tag c.c_tags;
+
+    let f_kind kind =
+      g.Rdf_graph.add_triple ~sub ~pred: hump_kind ~obj: (lit kind)
+    in
+    List.iter f_kind c.c_kinds;
+
+    let file = contrib_file outdir c in
+    gen_ttl g file
+  with
+    Failure s -> failwith ("Contrib "^(c.c_name)^": "^s)
+;;
+
+let gen_contribs outdir contribs = List.iter (gen_contrib outdir) contribs;;
 (** Main *)
 
-let output_file = ref None;;
+let outdir = ref Filename.current_dir_name ;;
 
 let options =
   [
@@ -379,11 +517,18 @@ let options =
     "-u", Arg.Set_string db_user,
     "<user> Connect to database as <user> (default is: "^ !db_user ^")";
 
-    "-o", Arg.String (fun s -> output_file := Some s),
-    "<f> Output to <f> instead of standard output" ;
+    "-o", Arg.Set_string outdir,
+    "<d> Output to <d> instead of "^ !outdir ;
 
   ]
 
+
+let mkdir s =
+  let com = "mkdir -p "^(Filename.quote s) in
+  match Sys.command com with
+    0 -> ()
+  | n -> failwith ("Command failed: "^com)
+;;
 
 let main () =
   Arg.parse options (fun _ -> ())
@@ -400,7 +545,12 @@ let main () =
   let kinds = kinds db in
   let topics = topics db in
   let contribs = contribs db authors topics kinds in
-  SQL.disconnect (get_db())
+  SQL.disconnect (get_db());
+
+  mkdir (Filename.concat !outdir "authors");
+  mkdir (Filename.concat !outdir "contribs");
+  gen_authors !outdir authors;
+  gen_contribs !outdir contribs;
 ;;
 
 (*c==v=[Misc.safe_main]=1.0====*)
