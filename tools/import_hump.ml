@@ -363,47 +363,16 @@ let contribs db authors topics kinds =
 
 (** File generation *)
 
-let base_uri = Rdf_uri.uri "http://ocaml.org/hump";;
-let authors_uri = Rdf_uri.concat base_uri "authors/";;
-let author_uri_ label = Rdf_uri.append authors_uri (Netencoding.Url.encode label);;
+open Hump_rdf;;
 
-let contribs_uri = Rdf_uri.concat base_uri "contribs/";;
-let contrib_uri_ label = Rdf_uri.append contribs_uri (Netencoding.Url.encode label);;
 
-let hump_uri = Rdf_uri.uri "http://ocaml.org/hump.rdf#";;
-let hump_ s = Rdf_uri.append hump_uri s;;
-let hump_release = hump_"release";;
-let hump_status = hump_"status";;
-let hump_tag = hump_"tag";;
-let hump_kind = hump_"kind";;
-
-let status_uri s =
-  let s =
-    match s with
-      Devcode -> "devcode"
-    | Alpha -> "alpha"
-    | Beta -> "beta"
-    | Stable -> "stable"
-    | Mature -> "mature"
-  in
-  hump_ s
+let status_uri = function
+  Devcode -> hump_devcode
+| Alpha -> hump_alpha
+| Beta -> hump_beta
+| Stable -> hump_stable
+| Mature -> hump_mature
 ;;
-
-let dc_uri = Rdf_uri.uri "http://purl.org/dc/elements/1.1/";;
-let dc_ = Rdf_uri.append dc_uri;;
-let dc_desc = dc_"description";;
-let dc_date = dc_"date";;
-let dc_creator = dc_"creator";;
-let dc_rights = dc_"rights";;
-
-let foaf_uri = Rdf_uri.uri "http://xmlns.com/foaf/0.1/";;
-let foaf_ = Rdf_uri.append foaf_uri ;;
-let foaf_name = foaf_"name";;
-let foaf_firstname = foaf_"firstName";;
-let foaf_lastname = foaf_"lastName";;
-let foaf_homepage = foaf_"homepage";;
-
-let lit s = Rdf_term.term_of_literal_string s;;
 
 let gen_ttl g file =
   let tmp = Filename.temp_file "importhump" ".ttl" in
@@ -428,6 +397,8 @@ let contrib_file outdir c =
 let gen_author outdir _ a =
   let g = Rdf_graph.open_graph base_uri in
   let sub = Rdf_term.Uri (author_uri_ a.aut_label) in
+  g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit (utf8 a.aut_label));
+  g.Rdf_graph.add_triple ~sub ~pred: Rdf_rdf.rdf_type ~obj: (Rdf_term.Uri hump_author) ;
   g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit (a.aut_firstname^" "^a.aut_name)) ;
   g.Rdf_graph.add_triple ~sub ~pred: foaf_lastname ~obj: (lit a.aut_name) ;
   g.Rdf_graph.add_triple ~sub ~pred: foaf_firstname ~obj: (lit a.aut_firstname) ;
@@ -450,6 +421,8 @@ let gen_contrib outdir c =
   try
     let g = Rdf_graph.open_graph base_uri in
     let sub = Rdf_term.Uri (contrib_uri_ c.c_label) in
+    g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit (utf8 c.c_label));
+    g.Rdf_graph.add_triple ~sub ~pred: Rdf_rdf.rdf_type ~obj: (Rdf_term.Uri hump_contrib) ;
     g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit c.c_name);
     g.Rdf_graph.add_triple ~sub ~pred: foaf_homepage ~obj: (Rdf_term.Uri c.c_home);
     g.Rdf_graph.add_triple ~sub ~pred: dc_desc ~obj: (lit c.c_desc);
@@ -496,7 +469,6 @@ let gen_contrib outdir c =
 ;;
 
 let gen_contribs outdir contribs = List.iter (gen_contrib outdir) contribs;;
-(** Main *)
 
 let outdir = ref Filename.current_dir_name ;;
 

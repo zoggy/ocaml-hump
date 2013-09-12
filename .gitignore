@@ -8,3 +8,5 @@
 *.cmxs
 *.cmxa
 tools/import_hump
+tools/hump_gen
+
