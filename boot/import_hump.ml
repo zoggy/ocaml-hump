@@ -412,10 +412,10 @@ let gen_ttl g file =
     foaf_uri, "foaf" ; hump_uri, "hump" ;
     authors_uri, "authors" ; contribs_uri, "contribs" ;
   ];
-  Rdf_ttl.to_file g tmp;
+  Rdf_ttl.to_file g tmp ;
   let com = "grep -v '@prefix' "^(Filename.quote tmp)^" > "^(Filename.quote file) in
   match Sys.command com with
-    0 -> ()
+    0 -> Sys.remove tmp
   | n ->  failwith ("Command failed: "^com)
 ;;
 
