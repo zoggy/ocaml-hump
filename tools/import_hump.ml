@@ -9,6 +9,26 @@ let utf8 s =
     ~in_enc: C.latin1 ~out_enc: C.utf8 s
 ;;
 
+(*c==v=[String.lowercase]=1.0====*)
+let lowercase s =
+  let len = String.length s in
+  let b = Buffer.create len in
+  for i = 0 to len - 1 do
+    let c =
+      match s.[i] with
+      | 'à' | 'â' | 'ä' -> 'a'
+      | 'é' | 'è' | 'ê' | 'ë' -> 'e'
+      | 'î' | 'ï' -> 'i'
+      | 'ô' | 'ö' -> 'o'
+      | 'ù' | 'û' | 'ü' -> 'u'
+      | 'ç' -> 'c'
+      | c -> Char.lowercase c
+    in
+    Buffer.add_char b c
+  done;
+  Buffer.contents b
+(*/c==v=[String.lowercase]=1.0====*)
+
 (*c==v=[String.strip_string]=1.0====*)
 let strip_string s =
   let len = String.length s in
@@ -332,8 +352,9 @@ let get_contrib_kinds db kinds id =
 let authors db =
   let f (id, name, firstname, url) =
     let label =
-      let s = utf8 (name ^ " " ^ firstname) in
-      String.lowercase (String.concat "-" (split_string s [' ']))
+      let s = lowercase (name ^ " " ^ firstname) in
+      let s = String.lowercase (String.concat "-" (split_string s [' '])) in
+      utf8 s
     in
     { aut_name = utf8 name ; aut_firstname = utf8 firstname ;
       aut_id = id ; aut_home = map_opt (fun s -> Rdf_uri.uri (utf8 s)) url ;
@@ -345,7 +366,7 @@ let authors db =
 let contribs db authors topics kinds =
   let f (id, name, desc, url, version, date) =
     {
-      c_label = utf8 (String.lowercase name) ;
+      c_label = utf8 (lowercase name) ;
       c_name = utf8 name ;
       c_desc = utf8 desc ;
       c_authors = List.map (fun id -> IMap.find id authors) (get_contrib_authors db id) ;
@@ -397,7 +418,7 @@ let contrib_file outdir c =
 let gen_author outdir _ a =
   let g = Rdf_graph.open_graph base_uri in
   let sub = Rdf_term.Uri (author_uri_ a.aut_label) in
-  g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit (utf8 a.aut_label));
+  g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit (a.aut_label));
   g.Rdf_graph.add_triple ~sub ~pred: Rdf_rdf.rdf_type ~obj: (Rdf_term.Uri hump_author) ;
   g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit (a.aut_firstname^" "^a.aut_name)) ;
   g.Rdf_graph.add_triple ~sub ~pred: foaf_lastname ~obj: (lit a.aut_name) ;
@@ -421,7 +442,7 @@ let gen_contrib outdir c =
   try
     let g = Rdf_graph.open_graph base_uri in
     let sub = Rdf_term.Uri (contrib_uri_ c.c_label) in
-    g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit (utf8 c.c_label));
+    g.Rdf_graph.add_triple ~sub ~pred: hump_id ~obj: (lit c.c_label);
     g.Rdf_graph.add_triple ~sub ~pred: Rdf_rdf.rdf_type ~obj: (Rdf_term.Uri hump_contrib) ;
     g.Rdf_graph.add_triple ~sub ~pred: foaf_name ~obj: (lit c.c_name);
     g.Rdf_graph.add_triple ~sub ~pred: foaf_homepage ~obj: (Rdf_term.Uri c.c_home);
@@ -536,3 +557,5 @@ let safe_main main =
 (*/c==v=[Misc.safe_main]=1.0====*)
 
 let () = safe_main main;;
+
+
