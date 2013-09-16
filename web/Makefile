@@ -7,7 +7,16 @@ LESSC=lessc
 
 .PHONY: build site test style
 
-style:
+build:
+	$(MAKE) site
+	$(MAKE) style
+
+site:
+	$(STOG) $(STOG_OPTIONS) .
+
+style: $(DEST_DIR)/style.css
+
+$(DEST_DIR)/style.css: less/*.less
 	mkdir -p $(DEST_DIR)
 	$(LESSC) less/style.less > $(DEST_DIR)/style.css
 
