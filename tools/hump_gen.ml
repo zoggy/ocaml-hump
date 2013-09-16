@@ -163,6 +163,90 @@ let author_contribs g uri =
   List.fold_left f [] (exec_select g q)
 ;;
 
+let contrib_licenses g uri =
+  let q = "SELECT distinct ?license
+     WHERE { <"^(Rdf_uri.string uri)^"> dc:rights ?license }
+     ORDER BY DESC(LCASE(?license))"
+  in
+  let f acc sol =
+    let s =
+      try Rdf_sparql.get_string sol "license"
+      with _ -> Rdf_term.string_of_term (Rdf_sparql.get_term sol "license")
+    in
+    s :: acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contrib_status g uri =
+  let q = "SELECT distinct ?status
+     WHERE { <"^(Rdf_uri.string uri)^"> <"^(Rdf_uri.string hump_status)^"> ?status }"
+  in
+  let f acc sol =
+    let uri = Rdf_sparql.get_iri sol hump_uri "status" in
+    try
+      let pair = List.find (fun (u,_) -> Rdf_uri.compare u uri = 0) Hump_rdf.status_strings in
+      (snd pair) :: acc
+    with Not_found -> acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contrib_releases g uri =
+  let q = "SELECT ?date ?version
+     WHERE { <"^(Rdf_uri.string uri)^"> <"^(Rdf_uri.string hump_release)^"> _:rel .
+             _:rel dc:date ?date .
+             _:rel foaf:name ?version . }
+       ORDER BY DESC(?date)"
+  in
+  let f acc sol =
+    let date = Rdf_sparql.get_datetime sol "date" in
+    let version = Rdf_sparql.get_string sol "version" in
+    (date, version) :: acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contrib_tags g uri =
+  let q = "SELECT distinct ?tag
+     WHERE { <"^(Rdf_uri.string uri)^"> <"^(Rdf_uri.string hump_tag)^"> ?tag }
+     ORDER BY DESC(LCASE(?tag))"
+  in
+  let f acc sol =
+    let s =
+      try Rdf_sparql.get_string sol "tag"
+      with _ -> Rdf_term.string_of_term (Rdf_sparql.get_term sol "tag")
+    in
+    s :: acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contrib_kinds g uri =
+  let q = "SELECT distinct ?kind
+     WHERE { <"^(Rdf_uri.string uri)^"> <"^(Rdf_uri.string hump_kind)^"> ?kind }
+     ORDER BY DESC(LCASE(?kind))"
+  in
+  let f acc sol =
+    let s =
+      try Rdf_sparql.get_string sol "kind"
+      with _ -> Rdf_term.string_of_term (Rdf_sparql.get_term sol "kind")
+    in
+    s :: acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contrib_homepage g uri =
+  let q = "SELECT distinct ?uri
+     WHERE { <"^(Rdf_uri.string uri)^"> foaf:homepage ?uri .
+           FILTER (ISURI(?uri)) }"
+  in
+  match exec_select g q with
+    [] -> None
+  | sol :: _ -> Some (Rdf_sparql.get_iri sol hump_uri "uri")
+;;
+
 let literal_obj g uri pred =
   match g.Rdf_graph.objects_of ~sub: (Rdf_term.Uri uri) ~pred with
     (Rdf_term.Literal lit) :: _ -> Some (lit.Rdf_term.lit_value)
@@ -200,14 +284,69 @@ let div ?id ?cls xmls =
 
 let li xmls = Xtmpl.E (("","li"), [], xmls);;
 
+let xml_info_table ?id rows =
+  let f_row (xml1, xml2) =
+    Xtmpl.E (("","tr"),[],
+     [
+       Xtmpl.E (("","th"),[],xml1) ;
+       Xtmpl.E (("","td"),[],xml2) ;
+     ])
+  in
+  let atts =
+    let att_id =
+      match id with None -> [] | Some d -> [("","id"), d]
+    in
+    (("","class"), "table") :: att_id
+  in
+  Xtmpl.E
+    (("","table"), atts,
+     [
+      Xtmpl.E (("","tbody"),[], List.map f_row rows)
+     ])
+;;
+
+let concat sep l =
+  let rec iter acc = function
+    [] -> List.rev acc
+  | [x] -> iter (x :: acc) []
+  | h :: q -> iter (sep :: h :: acc) q
+  in
+  iter [] l
+;;
+
+let string_of_date d = Netdate.format ~fmt: "%b %e, %Y" d;;
+
+let first_sentence s =
+  let flags = [`UTF8 ; `MULTILINE] in
+  let pat = "\\.[ \\n\\r]" in
+  let rex = Pcre.regexp ~flags pat in
+  try
+     match Pcre.pcre_exec ~rex ~pos: 0 s with
+       [| |] -> assert false
+     | t ->
+        let p = t.(0) in
+        let s1 = String.sub s 0 (p+1) in
+        let len = String.length s in
+        let s2 = String.sub s (p+1) (len - p - 1) in
+        (s1, s2)
+  with Not_found ->
+    (s, "")
+;;
+
 let xml_of_contrib g uri =
   let cname = name g uri in
   let desc =
     match desc g uri with
       None -> []
     | Some s ->
-        let l = split_string s ['\n' ; '\r'] in
-        List.map (fun s -> Xtmpl.E (("","p"), [], [Xtmpl.D s])) l
+        match first_sentence s with
+          (s1, s2) ->
+            [ Xtmpl.E (("","div"), [], [Xtmpl.D s1]) ;
+                Xtmpl.E (("","sep_"), [], []) ;
+              Xtmpl.E (("","p"), [], [Xtmpl.D s2]) ;
+            ]
+              (*let l = split_string s ['\n' ; '\r'] in
+                 List.map (fun s -> Xtmpl.E (("","p"), [], [Xtmpl.D s])) l*)
   in
   let authors =
     let l = contrib_authors g uri in
@@ -217,18 +356,84 @@ let xml_of_contrib g uri =
           s1 :: s2 :: _ -> s2 ^ "/" ^ s1
         | _ -> assert false
       in
-      li [Xtmpl.E (("","elt"), [("","href"), hid], [])]
+      Xtmpl.E (("","elt"), [("","href"), hid], [])
     in
     let authors = List.map f l in
-    [ section ~id: "authors" "Authors"
-      [ Xtmpl.E (("","ul"), [], authors) ]
+    let authors = concat (Xtmpl.D ", ") authors in
+    ([Xtmpl.D "Authors"], authors)
+  in
+  let homepage =
+    let xml = match contrib_homepage g uri with
+        None -> []
+      | Some uri ->
+          let uri_s = Rdf_uri.string uri in
+          [Xtmpl.E (("","a"), [("","escamp_"), "href" ; ("","href"), uri_s],
+           [Xtmpl.E (("", "code"), [], [Xtmpl.D uri_s])]
+            )
+          ]
+    in
+    ([Xtmpl.D "Homepage"], xml)
+  in
+  let (date, last_rel) =
+    let l = contrib_releases g uri in
+    let (date, xml) =
+      match l with
+        [] -> (None, [])
+      | (date, version) :: _ ->
+          let d = Netdate.format ~fmt: "%Y/%m/%d" date in
+          (Some d, [ Xtmpl.D (version ^ " ("^(string_of_date date)^")")])
+    in
+    (date, ([Xtmpl.D "Last release"], xml))
+  in
+  let status =
+    let xml = concat (Xtmpl.D ", ")
+      (List.map (fun s -> Xtmpl.D s)
+       (contrib_status g uri))
+    in
+    ([Xtmpl.D "Status"], xml)
+  in
+  let licenses =
+    let xml = concat (Xtmpl.D ", ")
+      (List.map (fun s -> Xtmpl.D s)
+       (contrib_licenses g uri))
+    in
+    ([Xtmpl.D "License(s)"], xml)
+  in
+  let tags =
+    let xml = [ Xtmpl.E (("","elt-keywords"), [("","sep"), "<main_/>"], []) ] in
+    (*    let xml = List.map
+       (fun s -> Xtmpl.E (("","div"), [("","class"), "tag"], [Xtmpl.D s]))
+       (contrib_tags g uri)
+       in
+       *)
+    ([Xtmpl.D "Tag(s)"], xml)
+  in
+  let kinds =
+    let xml =  [ Xtmpl.E (("","elt-topics"), [("","sep"), "<main_/>"], []) ] in
+    (*List.map
+      (fun s -> Xtmpl.E (("","div"), [("","class"), "kind"], [Xtmpl.D s]))
+        (contrib_kinds g uri)
+    in*)
+    ([Xtmpl.D "Kind(s)"], xml)
+  in
+
+  let info = xml_info_table [
+      homepage ;
+      last_rel ;
+      authors ;
+      kinds ;
+      status ;
+      licenses ;
+      tags ;
     ]
   in
   Xtmpl.E (("","contrib"),
    [("","title"), cname ;
-    ("","with-contents"), "true" ;
-   ],
-   [ Xtmpl.E (("","contents"), [], desc @ authors) ]
+    ("","keywords"), String.concat ", " (contrib_tags g uri) ;
+     ("","topics"), String.concat ", " (contrib_kinds g uri) ;
+     ("","with-contents"), "true" ;
+   ]@ (match date with None -> [] | Some d -> [("","date"), d] ),
+   [ Xtmpl.E (("","contents"), [], desc @ [info]) ]
   )
 ;;
 

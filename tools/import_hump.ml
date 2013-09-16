@@ -470,11 +470,12 @@ let gen_author outdir _ a =
 
 let gen_authors outdir authors = IMap.iter (gen_author outdir) authors;;
 
-let gen_contrib outdir c =
+let gen_contrib =
   let bn =
     let cpt = ref 0 in
     fun () -> incr cpt; Rdf_term.Blank_ (Rdf_term.blank_id_of_string ("b"^(string_of_int !cpt)))
   in
+  fun outdir c ->
   try
     let g = Rdf_graph.open_graph base_uri in
     let sub = Rdf_term.Uri (contrib_uri_ c.c_label) in
@@ -510,6 +511,7 @@ let gen_contrib outdir c =
          ~pred: hump_status ~obj: (Rdf_term.Uri (status_uri s))
     );
     let f_tag tag =
+      let tag = replace_in_string ~pat: "/" ~subs: "-" ~s: tag in
       g.Rdf_graph.add_triple ~sub ~pred: hump_tag ~obj: (lit tag)
     in
     List.iter f_tag c.c_tags;

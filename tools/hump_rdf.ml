@@ -24,6 +24,15 @@ let hump_beta = hump_"beta";;
 let hump_stable = hump_"stable";;
 let hump_mature = hump_"mature";;
 
+let status_strings =
+  [ hump_devcode, "Development code" ;
+    hump_alpha, "Alpha" ;
+    hump_beta, "Beta" ;
+    hump_stable, "Stable" ;
+    hump_mature, "Mature" ;
+  ]
+;;
+
 let dc_uri = Rdf_uri.uri "http://purl.org/dc/elements/1.1/";;
 let dc_ = Rdf_uri.append dc_uri;;
 let dc_desc = dc_"description";;

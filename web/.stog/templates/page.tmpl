@@ -2,7 +2,6 @@
 <head>
 <title><site-title/> : <elt-title/></title><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <link rel="stylesheet" type="text/css" href="&lt;site-url/&gt;/style.css"></link>
-<rssfeed/>
 </head><body>
 <div id="page">
 <include file="menubar.tmpl"/>
@@ -13,22 +12,13 @@
 <if withsidebar="true"><include file="sidebar.tmpl"/><main_/></if>
 <elt-body/>
 
-<if elt-type="contrib">
-<div class="elt-keywords">
-  <div class="bloc-keywords">
-  Topics: <div class="keywords"><elt-topics sep=", "/></div>
-  </div>
-  <div class="bloc-keywords">
-  Keywords: <div class="keywords"><elt-keywords sep=", "/></div>
-  </div>
-</div>
-</if>
 </div>
 
 <footer id="bottombar">
 </footer>
+<!--
 <script type="text/javascript" src="&lt;site-url/&gt;/jquery.js">_</script>
 <script type="text/javascript" src="&lt;site-url/&gt;/bootstrap-collapse.js">_</script>
-
+-->
 </body>
 </html>
