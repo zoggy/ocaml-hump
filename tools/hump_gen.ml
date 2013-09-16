@@ -32,6 +32,28 @@ let split_string ?(keep_empty=false) s chars =
   iter "" 0
 (*/c==v=[String.split_string]=1.1====*)
 
+(*c==v=[String.lowercase]=1.0====*)
+let lowercase s =
+  let len = String.length s in
+  let b = Buffer.create len in
+  for i = 0 to len - 1 do
+    let c =
+      match s.[i] with
+      | 'à' | 'â' | 'ä' -> 'a'
+      | 'é' | 'è' | 'ê' | 'ë' -> 'e'
+      | 'î' | 'ï' -> 'i'
+      | 'ô' | 'ö' -> 'o'
+      | 'ù' | 'û' | 'ü' -> 'u'
+      | 'ç' -> 'c'
+      | c -> Char.lowercase c
+    in
+    Buffer.add_char b c
+  done;
+  Buffer.contents b
+(*/c==v=[String.lowercase]=1.0====*)
+
+
+
 let invalid_graph f uri =
   let msg = "invalid graph detected in "^f^" "^(Rdf_uri.string uri) in
   failwith msg
@@ -75,12 +97,49 @@ let exec_select g q =
       failwith (q^"\n"^(Rdf_sparql.string_of_error e))
 ;;
 
+let authors g =
+  let q = "SELECT distinct ?uri ?lastname ?firstname
+     WHERE { _:a dc:creator ?uri .
+             ?uri foaf:lastName ?lastname .
+             ?uri foaf:firstName ?firstname . }
+     ORDER BY DESC(LCASE(?lastname)) DESC(LCASE(?firstname))"
+  in
+  let f acc sol =
+    let lastname =
+      try Rdf_sparql.get_string sol "lastname"
+      with _ -> ""
+    in
+    let firstname =
+      try Rdf_sparql.get_string sol "firstname"
+      with _ -> ""
+    in
+    match Rdf_sparql.get_term sol "uri" with
+      Rdf_term.Uri uri -> (uri, lastname, firstname) :: acc
+    | _ -> acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
+let contribs g =
+  let q = "SELECT distinct ?uri
+     WHERE { ?uri dc:creator _:a .
+             ?uri foaf:name ?name .}
+     ORDER BY DESC(LCASE(?name))"
+  in
+  let f acc sol =
+    match Rdf_sparql.get_term sol "uri" with
+      Rdf_term.Uri uri -> uri :: acc
+    | _ -> acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
 let contrib_authors g uri =
-  let q = "SELECT ?uri
+  let q = "SELECT distinct ?uri
      WHERE { <"^(Rdf_uri.string uri)^"> dc:creator ?uri .
              ?uri foaf:lastName ?lastname .
              ?uri foaf:firstName ?firstname . }
-     ORDER BY DESC(?lastname) DESC(?firstname)"
+     ORDER BY DESC(LCASE(?lastname)) DESC(LCASE(?firstname))"
   in
   let f acc sol =
     match Rdf_sparql.get_term sol "uri" with
@@ -91,10 +150,10 @@ let contrib_authors g uri =
 ;;
 
 let author_contribs g uri =
-  let q = "SELECT ?uri
+  let q = "SELECT distinct ?uri
      WHERE { ?uri dc:creator <"^(Rdf_uri.string uri)^"> .
              ?uri foaf:name ?name . }
-     ORDER BY DESC(?name) "
+     ORDER BY DESC(LCASE(?name)) "
   in
   let f acc sol =
     match Rdf_sparql.get_term sol "uri" with
@@ -208,33 +267,129 @@ let mkdir s =
   | n -> failwith ("Command failed: "^com)
 ;;
 
+module SMap = Map.Make(String);;
+
+let xml_index list =
+  let group (name, hid) map =
+    if String.length name > 0 then
+      begin
+        let n = Rdf_utf8.utf8_nb_bytes_of_char name.[0] in
+        let id = String.capitalize (lowercase (String.sub name 0 n)) in
+        let l =
+          try SMap.find id map
+          with Not_found -> []
+        in
+        SMap.add id ((name, hid)::l) map
+      end
+    else
+      map
+  in
+  (* fold right to keep order of list after insertion in groups *)
+  let groups = List.fold_right group list SMap.empty in
+
+  let links = SMap.fold
+    (fun id _ acc ->
+      (Xtmpl.D " - ") ::
+      (Xtmpl.E (("","elt"), [("","href"), "#"^id], [Xtmpl.D id])) ::
+      acc
+
+    )
+    groups [Xtmpl.D " - "]
+  in
+
+  let f_elt (name, hid) =
+    li [Xtmpl.E (("","elt"), [("","href"), hid], [Xtmpl.D name])]
+  in
+  let f_group id list acc =
+    (Xtmpl.E (("","section"), [("","id"), id ; ("","title"), id],
+      [ Xtmpl.E (("","ul"),[], List.map f_elt list)])
+    ) :: acc
+  in
+  (Xtmpl.E (("","section"),[], List.rev links)) ::
+   (List.rev (SMap.fold f_group groups []))
+;;
+
 let gen_contrib outdir g uri =
   let path = Rdf_uri.path uri in
   match List.rev path with
     file :: dir :: _ ->
       let dir = Filename.concat outdir dir in
-      mkdir dir;
       let file = Filename.concat dir (file^".html") in
       let xml = xml_of_contrib g uri in
       file_of_string ~file (Xtmpl.string_of_xml xml)
   | _ -> assert false
 ;;
 
-let gen_contribs outdir g = List.iter (gen_contrib outdir g) (contribs g);;
+let gen_contrib_index outdir g =
+  let contribs = contribs g in
+  let contribs =
+    let f uri =
+      let hid =
+        match List.rev (Rdf_uri.path uri) with
+          s1 :: s2 :: _ -> s2 ^ "/" ^ s1
+        | _ -> assert false
+      in
+      (name g uri, hid)
+    in
+    xml_index (List.map f contribs)
+  in
+  let xml =
+    Xtmpl.E (("","page"),
+     [("","title"), "Contribs" ],
+     contribs
+    )
+  in
+  let dir = Filename.concat outdir "contribs" in
+  mkdir dir ;
+  let file = Filename.concat dir "index.html" in
+  file_of_string ~file (Xtmpl.string_of_xml xml)
+;;
 
-let gen_author outdir g uri =
+let gen_contribs outdir g =
+  gen_contrib_index outdir g ;
+  List.iter (gen_contrib outdir g) (contribs g)
+;;
+
+let gen_author outdir g (uri, _, _) =
   let path = Rdf_uri.path uri in
   match List.rev path with
     file :: dir :: _ ->
       let dir = Filename.concat outdir dir in
-      mkdir dir;
       let file = Filename.concat dir (file^".html") in
       let xml = xml_of_author g uri in
       file_of_string ~file (Xtmpl.string_of_xml xml)
   | _ -> assert false
 ;;
 
-let gen_authors outdir g = List.iter (gen_author outdir g) (authors g);;
+let gen_author_index outdir g =
+  let authors = authors g in
+  let authors =
+    let f (uri, name, firstname) =
+      let hid =
+        match List.rev (Rdf_uri.path uri) with
+          s1 :: s2 :: _ -> s2 ^ "/" ^ s1
+        | _ -> assert false
+      in
+      (name^" "^firstname, hid)
+    in
+    xml_index (List.map f authors)
+  in
+  let xml =
+    Xtmpl.E (("","page"),
+     [("","title"), "Authors" ],
+     authors
+    )
+  in
+  let dir = Filename.concat outdir "authors" in
+  mkdir dir ;
+  let file = Filename.concat dir "index.html" in
+  file_of_string ~file (Xtmpl.string_of_xml xml)
+;;
+
+let gen_authors outdir g =
+  gen_author_index outdir g ;
+  List.iter (gen_author outdir g) (authors g)
+;;
 
 let main () =
   let outdir = ref Filename.current_dir_name in

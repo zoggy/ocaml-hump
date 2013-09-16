@@ -1,0 +1,33 @@
+@lineHeightFactor: 1.5 ;
+@baseFontSize : 14pt ;
+@baseLineHeight: @baseFontSize * @lineHeightFactor;
+@bodyBackground: #EEF;
+@pageBackground: white ;
+
+/* Modular Scale from http://modularscale.com/scale/?px1=14&px2=&ra1=1.125&ra2=0
+        ----------------------
+        14px @ 1:1.125
+        ----------------------*/
+
+@pageTitleFontSize: 1.802em;
+@pageTitleLineHeight: @lineHeightFactor / @pageTitleFontSize ;
+@pageTitleMarginBottom: @pageTitleLineHeight ;
+
+
+@sectionTitleFontSize: 1.602em;
+@sectionTitleLineHeight: @lineHeightFactor / @sectionTitleFontSize;
+@sectionTitleMarginBottom: @sectionTitleLineHeight;
+
+@subsectionTitleFontSize: 1.266em;
+@subsectionTitleLineHeight: @lineHeightFactor / @sectionTitleFontSize;
+@subsectionTitleMarginBottom: @sectionTitleLineHeight;
+
+@subsubsectionTitleFontSize: 1.125em;
+@subsubsectionTitleLineHeight: @lineHeightFactor / @sectionTitleFontSize;
+@subsubsectionTitleMarginBottom: @sectionTitleLineHeight;
+
+@eltItemTitleFontSize: @subsubsectionTitleFontSize ;
+@eltItemTitleLineHeight: @lineHeightFactor / @eltItemTitleFontSize ;
+@eltItemTitleMarginBottom:  0;
+
+@decreaseFontSizeFactor: 0.889 ;

@@ -10,3 +10,7 @@ import_hump: hump_rdf.cmx import_hump.ml
 
 hump_rdf.cmx: hump_rdf.ml
 	ocamlfind ocamlopt -package rdf -c $^
+
+clean:
+	rm -f *.cm* *.annot *.o
+	rm -f import_hump hump_gen

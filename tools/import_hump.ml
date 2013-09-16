@@ -338,7 +338,7 @@ let get_tag_fullname topics id =
   let rec iter acc id =
     try
       let (name, father) = IMap.find id topics in
-      let name = utf8 (String.lowercase name) in
+      let name = utf8 (lowercase name) in
       match father with
         None -> name :: acc
       | Some id -> iter (name::acc) id
@@ -378,7 +378,7 @@ let get_contrib_kinds db kinds id =
 ;;
 
 let mk_label s =
-  let s = String.lowercase (String.concat "-" (split_string s [' '])) in
+  let s = lowercase (String.concat "-" (split_string s [' '])) in
   let s = List.fold_left
     (fun s (pat, subs) -> replace_in_string ~pat ~subs ~s)
     s [ "#", "sharp" ]
@@ -389,7 +389,7 @@ let mk_label s =
 let authors db =
   let f (id, name, firstname, url) =
     let label =
-      let s = lowercase (name ^ " " ^ firstname) in
+      let s = name ^ " " ^ firstname in
       mk_label s
     in
     { aut_name = utf8 name ; aut_firstname = utf8 firstname ;
@@ -449,7 +449,7 @@ let author_file outdir a =
   Filename.concat outdir (Filename.concat "authors" (a.aut_label^".ttl"));;
 
 let contrib_file outdir c =
-  Filename.concat outdir (Filename.concat "contribs" ((String.lowercase c.c_name)^".ttl"));;
+  Filename.concat outdir (Filename.concat "contribs" ((lowercase c.c_name)^".ttl"));;
 
 let gen_author outdir _ a =
   let g = Rdf_graph.open_graph base_uri in

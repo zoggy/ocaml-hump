@@ -2,7 +2,7 @@ STOGDIR=..
 STOG=stog
 DEST_DIR=`pwd`/../output
 BASE_URL_OPTION=
-STOG_OPTIONS= -d $(DEST_DIR) -v -v -v --depcut $(BASE_URL_OPTION) --def stogdir:`pwd` $(MORE_OPTS)
+STOG_OPTIONS= -d $(DEST_DIR) -v --depcut $(BASE_URL_OPTION) --def stogdir:`pwd` $(MORE_OPTS)
 LESSC=lessc
 
 .PHONY: build site test style
