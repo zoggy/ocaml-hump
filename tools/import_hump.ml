@@ -9,6 +9,34 @@ let utf8 s =
     ~in_enc: C.latin1 ~out_enc: C.utf8 s
 ;;
 
+(*c==v=[String.replace_in_string]=1.0====*)
+let replace_in_string ~pat ~subs ~s =
+  let len_pat = String.length pat in
+  let len = String.length s in
+  let b = Buffer.create len in
+  let rec iter pos =
+    if pos >= len then
+      ()
+    else
+      if pos + len_pat > len then
+        Buffer.add_string b (String.sub s pos (len - pos))
+      else
+        if String.sub s pos len_pat = pat then
+          (
+           Buffer.add_string b subs;
+           iter (pos+len_pat)
+          )
+        else
+          (
+           Buffer.add_char b s.[pos];
+           iter (pos+1);
+          )
+  in
+  iter 0;
+  Buffer.contents b
+(*/c==v=[String.replace_in_string]=1.0====*)
+
+
 (*c==v=[String.lowercase]=1.0====*)
 let lowercase s =
   let len = String.length s in
@@ -349,12 +377,20 @@ let get_contrib_kinds db kinds id =
   List.map (get_tag_fullname kinds) idprops
 ;;
 
+let mk_label s =
+  let s = String.lowercase (String.concat "-" (split_string s [' '])) in
+  let s = List.fold_left
+    (fun s (pat, subs) -> replace_in_string ~pat ~subs ~s)
+    s [ "#", "sharp" ]
+  in
+  utf8 s
+;;
+
 let authors db =
   let f (id, name, firstname, url) =
     let label =
       let s = lowercase (name ^ " " ^ firstname) in
-      let s = String.lowercase (String.concat "-" (split_string s [' '])) in
-      utf8 s
+      mk_label s
     in
     { aut_name = utf8 name ; aut_firstname = utf8 firstname ;
       aut_id = id ; aut_home = map_opt (fun s -> Rdf_uri.uri (utf8 s)) url ;
@@ -366,7 +402,7 @@ let authors db =
 let contribs db authors topics kinds =
   let f (id, name, desc, url, version, date) =
     {
-      c_label = utf8 (lowercase name) ;
+      c_label = mk_label name ;
       c_name = utf8 name ;
       c_desc = utf8 desc ;
       c_authors = List.map (fun id -> IMap.find id authors) (get_contrib_authors db id) ;

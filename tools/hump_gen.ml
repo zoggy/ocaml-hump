@@ -90,6 +90,20 @@ let contrib_authors g uri =
   List.fold_left f [] (exec_select g q)
 ;;
 
+let author_contribs g uri =
+  let q = "SELECT ?uri
+     WHERE { ?uri dc:creator <"^(Rdf_uri.string uri)^"> .
+             ?uri foaf:name ?name . }
+     ORDER BY DESC(?name) "
+  in
+  let f acc sol =
+    match Rdf_sparql.get_term sol "uri" with
+      Rdf_term.Uri uri -> uri :: acc
+    | _ -> acc
+  in
+  List.fold_left f [] (exec_select g q)
+;;
+
 let literal_obj g uri pred =
   match g.Rdf_graph.objects_of ~sub: (Rdf_term.Uri uri) ~pred with
     (Rdf_term.Literal lit) :: _ -> Some (lit.Rdf_term.lit_value)
@@ -161,11 +175,29 @@ let xml_of_contrib g uri =
 
 let xml_of_author g uri =
   let name = name g uri in
+  let contribs =
+    let l = author_contribs g uri in
+    let f uri =
+      let hid =
+        match List.rev (Rdf_uri.path uri) with
+          s1 :: s2 :: _ -> s2 ^ "/" ^ s1
+        | _ -> assert false
+      in
+      li [Xtmpl.E (("","elt"), [("","href"), hid], [])]
+    in
+    let contribs = List.map f l in
+    [ section ~id: "contribs" "Contribs"
+      [ Xtmpl.E (("","ul"), [], contribs) ]
+    ]
+  in
   Xtmpl.E (("","author"),
    [("","title"), name ;
     ("","with-contents"), "true" ;
    ],
-   [ Xtmpl.E (("","contents"), [], []) ]
+   [ Xtmpl.E (("","contents"), [],
+        contribs ;
+      )
+   ]
   )
 ;;
 
